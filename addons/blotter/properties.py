@@ -6,6 +6,7 @@ from bpy import (
 
 from bpy.props import (
     FloatProperty,
+    BoolProperty,
     PointerProperty
 )
 
@@ -35,6 +36,27 @@ class PlotProperties(types.PropertyGroup):
         default=DIN_A4[1],
         precision=3,
         unit="LENGTH"
+    )
+
+    sort_paths: BoolProperty(
+        name="Sort Paths",
+        description="Sort the paths in order to optimize pen travel",
+        default=True
+    )
+
+    join_paths: BoolProperty(
+        name="Join Paths",
+        description="Join paths in order to optimize number of strokes",
+        default=True
+    )
+
+    join_paths_threshold: FloatProperty(
+        name="Join Threshold",
+        description="Similarity of strokes in order to join",
+        min=0.001,
+        max=1,
+        default=0.01,
+        precision=3
     )
 
 

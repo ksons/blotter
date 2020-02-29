@@ -89,7 +89,8 @@ class PathPlotter(StrokeShader):
 
     def __init__(self, name,  res_y, scale, split_at_invisible, frame_current):
         StrokeShader.__init__(self)
-        # attribute 'name' of 'StrokeShader' objects is not writable, so _name is used
+        # attribute 'name' of 'StrokeShader' objects is not writable, so _name
+        # is used
         self._name = name
         self.h = res_y
         self.scale = scale
@@ -175,8 +176,8 @@ class OperatorPlot(bpy.types.Operator):
 
     def execute(self, context):
         plotter = context.scene.plotter
-        self.report(
-            {'INFO'}, "Area X: %f; Area Y: %f" % (plotter.area_x, plotter.area_y))
+        self.report({'INFO'}, "Area X: %f; Area Y: %f" %
+                    (plotter.area_x, plotter.area_y))
 
         pp = PathPlotterCallback()
         editor = parameter_editor
@@ -192,8 +193,12 @@ class OperatorPlot(bpy.types.Operator):
 
             drawing = axi.Drawing(pp.lineset)
             drawing = drawing.scale(scale_factor(scene))
-            drawing = drawing.join_paths(0.1)
-            drawing = drawing.sort_paths()
+
+            if plotter.join_paths:
+                drawing = drawing.join_paths(plotter.join_paths_threshold)
+
+            if plotter.sort_paths:
+                drawing = drawing.sort_paths()
 
             device.run_drawing(drawing, True)
 

@@ -13,23 +13,26 @@ class PlotPanel(types.Panel):
     bl_region_type = 'WINDOW'
     bl_context = "output"
 
-    def draw_header(self, context):
-        # self.layout.prop(context.scene.plotter, "use_svg_export", text="")
-        pass
-
     def draw(self, context):
         layout = self.layout
 
         scene = context.scene
         plotter = scene.plotter
 
-        # layout.active = (plotter.use_svg_export and freestyle.mode != 'SCRIPT')
         layout.use_property_split = True
         layout.use_property_decorate = False
 
         col = layout.column()
-        col.prop(plotter, 'area_x')
-        col.prop(plotter, 'area_y')
+        col.prop(plotter, "area_x")
+        col.prop(plotter, "area_y")
+
+        row = layout.row()
+        row.prop(plotter, "sort_paths")
+        row.prop(plotter, "join_paths")
+
+        col = layout.column()
+        col.active = plotter.join_paths
+        col.prop(plotter, "join_paths_threshold")
 
         row = layout.row()
         row.operator("plot.plot")

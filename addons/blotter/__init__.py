@@ -18,22 +18,29 @@
 
 # <pep8 compliant>
 
-import bpy
-from bpy.app.handlers import persistent
-
-from pyaxidraw import axidraw
-import parameter_editor
-
-from freestyle.types import (
-    StrokeShader,
-)
-
 from bpy.props import (
     BoolProperty,
     EnumProperty,
     FloatProperty,
     PointerProperty,
 )
+from freestyle.types import (
+    StrokeShader,
+)
+import parameter_editor
+
+import bpy
+from bpy.app.handlers import persistent
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+
+try:
+    import axi
+except:
+    sys.stderr.write("Could not load axi library")
+
 
 bl_info = {
     "name": "Blotter: Draw Freestyle using AxiDraw",
@@ -105,7 +112,7 @@ class ParameterEditorCallback(object):
 class PathPlotter(StrokeShader):
     """Stroke Shader for writing stroke data to a .svg file."""
 
-    def __init__(self, name, style, res_y, scale, split_at_invisible, stroke_color_mode, frame_current):
+    def __init__(self, name,  res_y, scale, split_at_invisible, frame_current):
         StrokeShader.__init__(self)
         # attribute 'name' of 'StrokeShader' objects is not writable, so _name is used
         self._name = name
@@ -114,46 +121,23 @@ class PathPlotter(StrokeShader):
         self.frame_current = frame_current
         self.strokes = []
         self.split_at_invisible = split_at_invisible
-        self.stroke_color_mode = stroke_color_mode  # BASE | FIRST | LAST
-        self.style = style
-
-    @classmethod
-    def from_lineset(cls, lineset,  res_y, scale, split_at_invisible, use_stroke_color, frame_current, *, name=""):
-        """Builds a SVGPathShader using data from the given lineset"""
-        name = name or lineset.name
-        linestyle = lineset.linestyle
-        # extract style attributes from the linestyle and scene
-        style = {
-            'fill': 'none',
-            'stroke-width': linestyle.thickness,
-            'stroke-linecap': linestyle.caps.lower(),
-            'stroke-opacity': linestyle.alpha
-        }
-        # get dashed line pattern (if specified)
-        if linestyle.use_dashed_line:
-            style['stroke-dasharray'] = ",".join(str(elem)
-                                                 for elem in get_dashed_pattern(linestyle))
-        # return instance
-        return cls(name, style, res_y, scale, split_at_invisible, use_stroke_color, frame_current)
 
     @staticmethod
-    def pathgen(stroke, style, height, split_at_invisible, stroke_color_mode, f=lambda v: not v.attribute.visible):
+    def pathgen(stroke, height, split_at_invisible, f=lambda v: not v.attribute.visible):
         """Generator that creates SVG paths (as strings) from the current stroke """
         if len(stroke) <= 1:
             return []
-
-        print("Stroke Shader", str(stroke))
 
         it = iter(stroke)
         # start first path
         for v in it:
             x, y = v.point
             yield (x, height - y)
+
             if split_at_invisible and v.attribute.visible is False:
-                # end current and start new path;
-                # yield '" />' + path
                 # fast-forward till the next visible vertex
                 it = itertools.dropwhile(f, it)
+
                 # yield next visible vertex
                 svert = next(it, None)
                 if svert is None:
@@ -162,16 +146,10 @@ class PathPlotter(StrokeShader):
                 yield (x, height - y)
 
     def shade(self, stroke):
-        stroke = list(self.pathgen(stroke, self.style, self.h,
-                                   self.split_at_invisible, self.stroke_color_mode))
+        stroke = list(self.pathgen(stroke, self.h, self.split_at_invisible))
         self.strokes.append(stroke)
-        # convert to actual XML. Empty strokes are empty strings; they are ignored.
-        # self.elements.extend(et.XML(elem) for elem in stroke_to_paths if elem) # if len(elem.strip()) > len(self.path))
 
     def get_strokes(self):
-        """Write SVG data tree to file """
-        print("Write", self.scale)
-
         return self.strokes
 
 
@@ -218,13 +196,9 @@ class PathPlotterCallback(ParameterEditorCallback):
         if not self.poll(scene, lineset.linestyle):
             return []
 
-        print("modifier callback", lineset)
-
         split = True  # scene.svg_export.split_at_invisible
-        stroke_color_mode = 'BASE'  # lineset.linestyle.stroke_color_mode
-        self.shader = PathPlotter.from_lineset(
-            lineset,
-            render_height(scene), scale_factor(scene), split, stroke_color_mode, scene.frame_current, name=layer.name + '_' + lineset.name)
+        self.shader = PathPlotter(lineset.name or "", render_height(
+            scene), scale_factor(scene), split, scene.frame_current)
         return [self.shader]
 
     def lineset_post(self, scene, layer, lineset):
@@ -234,29 +208,16 @@ class PathPlotterCallback(ParameterEditorCallback):
         self.lineset.extend(self.shader.get_strokes())
 
 
-def plot_lineset(ad, lineset, scale):
-    for stroke in lineset:
-        for i, line in enumerate(stroke):
-            if not i:
-                print("moveto: {} {}".format(line[0], line[1]))
-                ad.moveto(line[0] * scale, line[1] * scale)
-            else:
-                print("lineto: {} {}".format(line[0], line[1]))
-                ad.lineto(line[0] * scale, line[1] * scale)
+def connect_plotter():
+    d = axi.Device()
+    d.enable_motors()
+    d.zero_position()
+    return d
 
 
-def initalize_plotter():
-    ad = axidraw.AxiDraw()
-    ad.interactive()
-    if not ad.connect():
-        return None
-    ad.moveto(0, 0)
-    return ad
-
-
-def disconnect_plotter(ad):
-    ad.moveto(0, 0)
-    ad.disconnect()
+def disconnect_plotter(d):
+    d.zero_position()
+    d.disable_motors()
 
 
 class OperatorPlot(bpy.types.Operator):
@@ -270,32 +231,33 @@ class OperatorPlot(bpy.types.Operator):
             {'INFO'}, "Area X: %f; Area Y: %f" % (plotter.area_x, plotter.area_y))
 
         pp = PathPlotterCallback()
+        editor = parameter_editor
 
-        def render_complete(scene, cb):
-            print("render_complete", str(pp.lineset),
-                  scene, cb, scale_factor(scene))
+        def render_complete(scene):
+            if not pp.lineset:
+                return
 
-            ad = initalize_plotter()
-            if not ad:
+            device = connect_plotter()
+            if not device:
                 self.report({'ERROR'}, "Failed to connect to AxiDraw.")
                 return
 
-            plot_lineset(ad, pp.lineset, scale_factor(scene))
+            drawing = axi.Drawing(pp.lineset)
+            drawing = drawing.scale(scale_factor(scene))
+            drawing = drawing.join_paths(0.1)
+            drawing = drawing.sort_paths()
 
-            disconnect_plotter(ad)
-            parameter_editor.callbacks_lineset_post.remove(
-                pp.lineset_post)
-            parameter_editor.callbacks_modifiers_post.remove(
-                pp.modifier_post)
+            device.run_drawing(drawing, True)
+
+            disconnect_plotter(device)
+
+            editor.callbacks_lineset_post.remove(pp.lineset_post)
+            editor.callbacks_modifiers_post.remove(pp.modifier_post)
             bpy.app.handlers.render_complete.remove(render_complete)
 
         try:
-
-            parameter_editor.callbacks_lineset_post.append(
-                pp.lineset_post)
-            parameter_editor.callbacks_modifiers_post.append(
-                pp.modifier_post)
-
+            editor.callbacks_lineset_post.append(pp.lineset_post)
+            editor.callbacks_modifiers_post.append(pp.modifier_post)
             bpy.app.handlers.render_complete.append(render_complete)
 
             bpy.ops.render.render('EXEC_DEFAULT')
@@ -315,22 +277,13 @@ classes = (
 
 
 def register():
-    print("register")
-
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.plotter = PointerProperty(type=PlotProperties)
 
-    # add callbacks
-    # bpy.app.handlers.render_pre.append(svg_export_header)
-    # bpy.app.handlers.render_complete.append(render_complete)
-
 
 def unregister():
-    # remove callbacks
-    # bpy.app.handlers.render_pre.remove(svg_export_header)
-
-    print("unregister")
+    pass
 
 
 if __name__ == "__main__":

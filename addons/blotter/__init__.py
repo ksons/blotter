@@ -18,21 +18,20 @@
 
 # <pep8 compliant>
 
-from bpy.props import (
-    BoolProperty,
-    EnumProperty,
-    FloatProperty,
-    PointerProperty,
+from . import (
+    ui,
+    properties
 )
+
 from freestyle.types import (
     StrokeShader,
 )
 import parameter_editor
 
 import bpy
-from bpy.app.handlers import persistent
 import os
 import sys
+import itertools
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -56,45 +55,20 @@ bl_info = {
     "category": "Render",
 }
 
-V3_BOUNDS = (0, 0, 11.8, 8.58)
-DIN_A4 = (0.297, 0.21)
-INCH_TO_METERS = 0.0254
-
 
 def render_height(scene):
-    return int(scene.render.resolution_y * scene.render.resolution_percentage / 100)
+    render = scene.render
+    return int(render.resolution_y * render.resolution_percentage / 100)
 
 
 def render_width(scene):
-    return int(scene.render.resolution_x * scene.render.resolution_percentage / 100)
+    render = scene.render
+    return int(render.resolution_x * render.resolution_percentage / 100)
 
 
 def scale_factor(scene):
-    return min(1.0 / render_height(scene) * V3_BOUNDS[3], 1.0 / render_width(scene) * V3_BOUNDS[2])
-
-
-class PlotProperties(bpy.types.PropertyGroup):
-    """Implements the properties for the plotter output exporter"""
-    bl_idname = "OUTPUT_PT_plotter_props"
-
-    area_x: FloatProperty(
-        name="Plot Area X",
-        description="Width of the area to plot",
-        min=V3_BOUNDS[0] * INCH_TO_METERS,
-        max=V3_BOUNDS[2] * INCH_TO_METERS,
-        default=DIN_A4[0],
-        precision=3,
-        unit="LENGTH"
-    )
-    area_y: FloatProperty(
-        name="Plot Area Y",
-        description="Height of the area to plot",
-        min=V3_BOUNDS[1] * INCH_TO_METERS,
-        max=V3_BOUNDS[3] * INCH_TO_METERS,
-        default=DIN_A4[1],
-        precision=3,
-        unit="LENGTH"
-    )
+    return min(1.0 / render_height(scene) * properties.V3_BOUNDS[3],
+               1.0 / render_width(scene) * properties.V3_BOUNDS[2])
 
 
 class ParameterEditorCallback(object):
@@ -124,8 +98,10 @@ class PathPlotter(StrokeShader):
         self.split_at_invisible = split_at_invisible
 
     @staticmethod
-    def pathgen(stroke, height, split_at_invisible, f=lambda v: not v.attribute.visible):
-        """Generator that creates SVG paths (as strings) from the current stroke """
+    def pathgen(stroke, height, split_at_invisible,
+                f=lambda v: not v.attribute.visible):
+        """Generator that creates SVG paths (as strings) from the current
+         stroke """
         if len(stroke) <= 1:
             return []
 
@@ -152,36 +128,6 @@ class PathPlotter(StrokeShader):
 
     def get_strokes(self):
         return self.strokes
-
-
-class PlotPanel(bpy.types.Panel):
-    """Creates a Panel in the render context of the properties editor"""
-    bl_idname = "RENDER_PT_PlotOutputPanel"
-    bl_space_type = 'PROPERTIES'
-    bl_label = "Plotter"
-    bl_region_type = 'WINDOW'
-    bl_context = "output"
-
-    def draw_header(self, context):
-        # self.layout.prop(context.scene.plotter, "use_svg_export", text="")
-        pass
-
-    def draw(self, context):
-        layout = self.layout
-
-        scene = context.scene
-        plotter = scene.plotter
-
-        # layout.active = (plotter.use_svg_export and freestyle.mode != 'SCRIPT')
-        layout.use_property_split = True
-        layout.use_property_decorate = False
-
-        col = layout.column()
-        col.prop(plotter, 'area_x')
-        col.prop(plotter, 'area_y')
-
-        row = layout.row()
-        row.operator("plot.plot")
 
 
 class PathPlotterCallback(ParameterEditorCallback):
@@ -271,21 +217,16 @@ class OperatorPlot(bpy.types.Operator):
         return {'FINISHED'}
 
 
-classes = (
-    PlotProperties,
-    PlotPanel,
-    OperatorPlot
-)
-
-
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-    bpy.types.Scene.plotter = PointerProperty(type=PlotProperties)
+    properties.register()
+    ui.register()
+    bpy.utils.register_class(OperatorPlot)
 
 
 def unregister():
-    pass
+    properties.unregister()
+    ui.unregister()
+    bpy.utils.unregister_class(OperatorPlot)
 
 
 if __name__ == "__main__":

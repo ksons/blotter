@@ -26,6 +26,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+*.dist-info
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -127,3 +128,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+#IDE
+
+.vscode
+
+# dependent libs
+addons/blotter/bin
+addons/blotter/serial
+addons/blotter/shapely

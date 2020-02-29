@@ -38,8 +38,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 try:
     import axi
-except:
-    sys.stderr.write("Could not load axi library")
+except ImportError as e:
+    print("Could not load axi library")
+    print(e)
 
 
 bl_info = {
@@ -218,6 +219,7 @@ def connect_plotter():
 def disconnect_plotter(d):
     d.zero_position()
     d.disable_motors()
+    d.pen_up()
 
 
 class OperatorPlot(bpy.types.Operator):
